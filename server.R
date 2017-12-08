@@ -4,6 +4,7 @@ library(corrplot)
 library(mlbench)
 library(InformationValue)
 options(scipen = 999)
+options(shiny.sanitize.errors = FALSE)
 
 data = data.table(read.csv('data/train.csv'))
 # data = data.table(input$data_file)
