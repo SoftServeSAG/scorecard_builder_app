@@ -3,7 +3,7 @@ library(ggplot2)
 library(pROC)
 library(shinythemes)
 
-source('RobustScoring.R')
+source('src/RobustScoring.R')
 
 # data = data.table(input$data_file)
 # data = data.table(read.csv('train.csv'))

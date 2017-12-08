@@ -5,7 +5,7 @@ library(mlbench)
 library(InformationValue)
 options(scipen = 999)
 
-data = data.table(read.csv('train.csv'))
+data = data.table(read.csv('data/train.csv'))
 # data = data.table(input$data_file)
 
 shinyServer(function(input, output, clientData, session) {
