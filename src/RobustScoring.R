@@ -2,24 +2,18 @@
 robust_scoring = function(data, target_variable = 'TARGET',ID_column = 'ID',training_perc = 50, good_perc = 0) {
   
 	library(data.table)
-
+  library(mlbench)
+  library(caret)
+  library(e1071)
+  library(InformationValue)
+  library(ggplot2)
+  library(woe)
+  library(polycor)
+  library(dplyr)
 	
 	dt = copy(data)
+	dt = dt[complete.cases(dt), ]
 
-	
-	library(mlbench)
-	library(caret)
-	library(e1071)
-	
-	
-	library(InformationValue)
-	library(ggplot2)
-	
-	
-	library(woe)
-	
-	#source('asplit.R')
-	
 	if(target_variable == 'TARGET'){
 		dt[,':='(TARGET = factor(TARGET))]
 	} else {
@@ -35,7 +29,12 @@ robust_scoring = function(data, target_variable = 'TARGET',ID_column = 'ID',trai
 	ID = dt[[ID_column]]
 	dt=dt[,!c(ID_column),with=F]
 	
-
+	for (col in colnames(dt)){
+	  if (col != 'TARGET'){
+	    if(length(levels(dt[[col]])) > 8) {dt=dt[,!c(col),with=F]}	
+	  }
+	  
+	}
 	
 	for (col in colnames(dt)){
 		if (col != 'TARGET'){
@@ -47,7 +46,7 @@ robust_scoring = function(data, target_variable = 'TARGET',ID_column = 'ID',trai
 	
 	size = nrow(dt)
 	for (col in colnames(dt)){
-		if (col != 'TARGET' & !prod(summary(dt[[col]]) / size < .97)){
+		if (col != 'TARGET' & (!prod(summary(dt[[col]]) / size < .97))){
 			
 			dt=dt[,!c(col),with=F]
 		}
@@ -87,11 +86,12 @@ robust_scoring = function(data, target_variable = 'TARGET',ID_column = 'ID',trai
 # 	
 	
 	dt_new = subset(dt2,,c(var_good,'TARGET')) 
-	dt_new = dt_new[, lapply(.SD, as.numeric), by = 'TARGET']
+	# dt_new = dt_new[, lapply(.SD, as.numeric), by = 'TARGET']
 	TARGET = dt$TARGET
 
 	
-	res$corr_matrix = cor(dt_new[,!c('TARGET'),with = F])
+	res$corr_matrix = hetcor(data.frame(dt_new[,!c('TARGET'),with = F]))
+	 
 	# View(corr_matrix)
 	
 	library(corrplot)
@@ -108,14 +108,13 @@ robust_scoring = function(data, target_variable = 'TARGET',ID_column = 'ID',trai
 # 		var_good = var_good[var_good!='num_var35']
 # 		woe_table = woe_table[woe_table!='num_var35']
 # 	}
-	var_bad = findCorrelation(res$corr_matrix, 0.90, names = T)
+	var_bad = findCorrelation(res$corr_matrix$correlations, 0.90, names = T)
 	var_good = var_good[!var_good %in% var_bad]
 	woe_table = woe_table[!names(woe_table) %in% var_bad]
 	
 	dt_new = subset(dt2,,c(var_good,'TARGET')) 
 	dt_new = dt_new[, lapply(.SD, as.numeric), by = 'TARGET']
-	res$corr_matrix = cor(dt_new[,!c('TARGET'),with = F])
-	
+	res$corr_matrix = hetcor(data.frame(dt_new[,!c('TARGET'),with = F]))	
 	
 	
 	# for (col in colnames(training)){
@@ -155,14 +154,20 @@ robust_scoring = function(data, target_variable = 'TARGET',ID_column = 'ID',trai
 	} else {
 		set.seed(11)
 		inTraining = createDataPartition(seq_len(size), p = training_perc / 100 , list = FALSE)
-		training = dt[inTraining]
-		testing = dt[-inTraining]
+		training = copy(dt[inTraining])
+		testing = copy(dt[-inTraining])
 	}
 	
 	# training$TARGET  = as.numeric(training$TARGET) -1
 	
+	# for (col in colnames(dt)){
+	#   if (col != 'TARGET'){
+	#     training[[col]] = factor(training[[col]])
+	#     levels(testing[[col]]) = levels(training[[col]])
+	#   }
+	# }
 	
-	hit.glm = glm(training$TARGET ~ .,data = training[,!c('TARGET','ID'),with=F], family = binomial(link = "logit"))
+	hit.glm = glm(training$TARGET ~ . - TARGET - ID,data = training, family = binomial(link = "logit"))
 	# rocplot(hit.glm,diag=TRUE,pred.prob.labels=FALSE,prob.label.digits=3,AUC=TRUE)
 	# summary(hit.glm)
 	res$glm = hit.glm
@@ -186,7 +191,7 @@ robust_scoring = function(data, target_variable = 'TARGET',ID_column = 'ID',trai
 	
 	res$scorecard = scorecard
 	
-	prob=predict.glm(hit.glm, newdata = testing[,!c('TARGET','ID'),with=F],type=c("response"))
+	prob=predict.glm(hit.glm, newdata = remove_missing_levels(hit.glm,testing),type=c("response"))
 	
 	prob1=predict(hit.glm,type=c("response"))
 	
@@ -238,8 +243,9 @@ asplit = function(vec, vec_ref = c('1'),if_ref=0,num=5){
 	if (!if_ref) {
 		vec_ref = vec	
 	} 
-		
-	if(class(vec) %in% c('numeric','integer')){
+  if (length(unique(vec)) < 6) {
+    return(as.factor(vec))
+  }	else if(class(vec) %in% c('numeric','integer')){
 		seq = c(0,seq_len(num)/num)
 		quan = unique(quantile(vec_ref,probs =seq,na.rm = T))
 		fact = cut(vec, quan, labels = NULL,include.lowest = T, right = T, dig.lab = 3,ordered_result = F)
@@ -248,4 +254,72 @@ asplit = function(vec, vec_ref = c('1'),if_ref=0,num=5){
 		return(as.factor(vec))
 	}
 	
+}
+
+remove_missing_levels <- function(fit, test_data) {
+  
+  # https://stackoverflow.com/a/39495480/4185785
+  
+  # drop empty factor levels in test data
+  test_data %>%
+    droplevels() %>%
+    as.data.frame() -> test_data
+  
+  # 'fit' object structure of 'lm' and 'glmmPQL' is different so we need to
+  # account for it
+  if (any(class(fit) == "glmmPQL")) {
+    # Obtain factor predictors in the model and their levels
+    factors <- (gsub("[-^0-9]|as.factor|\\(|\\)", "",
+                     names(unlist(fit$contrasts))))
+    # do nothing if no factors are present
+    if (length(factors) == 0) {
+      return(test_data)
+    }
+    
+    map(fit$contrasts, function(x) names(unmatrix(x))) %>%
+      unlist() -> factor_levels
+    factor_levels %>% str_split(":", simplify = TRUE) %>%
+      extract(, 1) -> factor_levels
+    
+    model_factors <- as.data.frame(cbind(factors, factor_levels))
+  } else {
+    # Obtain factor predictors in the model and their levels
+    factors <- (gsub("[-^0-9]|as.factor|\\(|\\)", "",
+                     names(unlist(fit$xlevels))))
+    # do nothing if no factors are present
+    if (length(factors) == 0) {
+      return(test_data)
+    }
+    
+    factor_levels <- unname(unlist(fit$xlevels))
+    model_factors <- as.data.frame(cbind(factors, factor_levels))
+  }
+  
+  # Select column names in test data that are factor predictors in
+  # trained model
+  
+  predictors <- names(test_data[names(test_data) %in% factors])
+  
+  # For each factor predictor in your data, if the level is not in the model,
+  # set the value to NA
+  
+  for (i in 1:length(predictors)) {
+    found <- test_data[, predictors[i]] %in% model_factors[
+      model_factors$factors == predictors[i], ]$factor_levels
+    if (any(!found)) {
+      # track which variable
+      var <- predictors[i]
+      # set to NA
+      test_data[!found, predictors[i]] <- NA
+      # drop empty factor levels in test data
+      test_data %>%
+        droplevels() -> test_data
+      # issue warning to console
+      message(sprintf(paste0("Setting missing levels in '%s', only present",
+                             " in test data but missing in train data,",
+                             " to 'NA'."),
+                      var))
+    }
+  }
+  return(test_data)
 }

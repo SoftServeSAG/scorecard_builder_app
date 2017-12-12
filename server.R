@@ -15,7 +15,6 @@ shinyServer(function(input, output, clientData, session) {
 		
 			if(is.null(input$data_file)){
 				data
-			
 			} else {
 				try(data.table(read.csv(input$data_file$datapath)),silent = T)
 			}
@@ -44,9 +43,9 @@ shinyServer(function(input, output, clientData, session) {
 # 		on.exit({ progress$close() })
 # 		})
 		dataInput <- reactive({
-			
-			
+		 
 			try(robust_scoring(mydata(),target_variable = input$target_variable,ID_column = input$ID_column, training_perc = input$training_perc, good_perc = input$good_perc),silent = T)
+		  
 		})
 		inputCutoff =  reactive({
 			try(ifelse(dataInput()$prob$prob > input$cut_off,1,0),silent = T)
@@ -67,6 +66,17 @@ shinyServer(function(input, output, clientData, session) {
 	}, options = list(pageLength = 20))
 	
 
+	# observeEvent(input$GoButton, {
+	#   session$sendCustomMessage(type = 'hud', message = 'show')
+	# })
+	# 
+	# observeEvent(class(dataInput()),{
+	#   session$sendCustomMessage(type = 'hud', message = 'hide')
+	# })
+	
+	
+	
+	
 	output$woe_table <- renderDataTable({
 		if(class(dataInput()) != 'list')	return()
 		# 		validate(need(input$first_epicenter_name != "", "Please specify both epicenters and click 'Run Calc' button."))
@@ -80,7 +90,7 @@ shinyServer(function(input, output, clientData, session) {
 		res
 
 	}, options = list(pageLength = 20))
-	
+
 	output$scorecard <- renderDataTable({
 		if(class(dataInput()) != 'list')	return()
 		
@@ -101,7 +111,7 @@ shinyServer(function(input, output, clientData, session) {
 	
 	output$corr_matrix <- renderPlot({
 		if(class(dataInput()) != 'list')	return()
-		corrplot(dataInput()$corr_matrix, method = "number")
+		corrplot(dataInput()$corr_matrix$correlations, method = "number")
 	})
 	
 	output$ROC <- renderPlot({
@@ -144,9 +154,7 @@ shinyServer(function(input, output, clientData, session) {
 			}
 		}
 	)
-    
-	
-	
+
 	session$onSessionEnded(function() {
 		stopApp()
 	})

@@ -18,7 +18,10 @@ RUN sudo apt-get -y install libfftw3-3 libfftw3-bin libfftw3-dev libfftw3-double
 # Install additional R packages
 
 RUN R -e "install.packages('shiny')"
+RUN R -e "install.packages('shinydashboard')"
+RUN R -e "install.packages('polycor')"
 RUN R -e "install.packages('pROC')"
+RUN R -e "install.packages('dplyr')"
 RUN R -e "install.packages('mlbench')"
 RUN R -e "install.packages('caret')"
 RUN R -e "install.packages('e1071')"
