@@ -10,10 +10,23 @@ robust_scoring = function(data, target_variable = 'TARGET',ID_column = 'ID',trai
   library(woe)
   library(polycor)
   library(dplyr)
+  library(gdata)
 	
 	dt = copy(data)
 	dt = dt[complete.cases(dt), ]
+	for (col in colnames(dt)){
+	    dt = dt[!is.na(dt[[col]])]
+	    if (class(dt[[col]]) %in% c('character','factor')){
+	      if (sum(dt[[col]] != '') / nrow(dt) < 0.8) {
+	        dt[,(col) := NULL] 
+	      } else {
+	        dt = dt[dt[[col]] != '']
+	      }
+	    }
+	}
 
+	dt = drop.levels(dt)
+	
 	if(target_variable == 'TARGET'){
 		dt[,':='(TARGET = factor(TARGET))]
 	} else {
@@ -167,29 +180,32 @@ robust_scoring = function(data, target_variable = 'TARGET',ID_column = 'ID',trai
 	#   }
 	# }
 	
-	hit.glm = glm(training$TARGET ~ . - TARGET - ID,data = training, family = binomial(link = "logit"))
+	hit.glm = glm(training$TARGET ~ . - TARGET - ID-1,data = training, family = binomial(link = "logit"))
 	# rocplot(hit.glm,diag=TRUE,pred.prob.labels=FALSE,prob.label.digits=3,AUC=TRUE)
 	# summary(hit.glm)
 	res$glm = hit.glm
 	library(pROC)
 	
 	score_def = 500
-	odds_def = 20
+	odds_def = 10
 	points_to_double = 20
 	
 	factor_sc = points_to_double / log(2)
 	offset = score_def - points_to_double * log(odds_def) / log(2)
 	
 	coef_model = data.table(t(coef(hit.glm)))
-	a_intercept = as.numeric(coef_model[,'(Intercept)'])
-	coef_model = coef_model[,!c('(Intercept)'), with = F]
-	coef_model = t(coef_model)
-	count_vars = length(coef_model)
-	
-	scorecard = (-coef_model - a_intercept / count_vars) * factor_sc + offset / count_vars
-	scorecard = data.table(Attribute = rownames(scorecard), Score = as.numeric(round(ifelse(scorecard>0,scorecard,0))))
-	
-	res$scorecard = scorecard
+	# a_intercept = as.numeric(coef_model[,'(Intercept)'])
+	# coef_model = coef_model[,!c('(Intercept)'), with = F]
+  coef_model = t(coef_model)
+	# count_vars = length(coef_model)
+	# count_vars = 6
+	scorecard = coef_model * factor_sc 
+	# scorecard = data.table(Attribute = rownames(scorecard), Score = as.numeric(round(ifelse(scorecard>0,scorecard,0))))
+	scorecard = data.table(Attribute = rownames(scorecard), Score = as.numeric(scorecard))
+	sc = GenerateScorecard(training,scorecard)
+	count_vars = length(unique(sc$Characteristic))
+	sc[, Score := round(ifelse(Score + offset / count_vars>0,Score + offset / count_vars,0))]
+	# res$scorecard = scorecard
 	
 	prob=predict.glm(hit.glm, newdata = remove_missing_levels(hit.glm,testing),type=c("response"))
 	
@@ -197,6 +213,8 @@ robust_scoring = function(data, target_variable = 'TARGET',ID_column = 'ID',trai
 	
 	training$prob=prob1
 	testing$prob = prob
+	
+	res$scorecard = sc
 	
 	dt3 = rbind(training,testing)
 	
@@ -322,4 +340,34 @@ remove_missing_levels <- function(fit, test_data) {
     }
   }
   return(test_data)
+}
+
+GenerateScorecard = function(training,scorecard) {
+  
+  card = data.table(
+    Characteristic = character(),
+    Attribute = character()
+  )
+  
+  
+  for (col in colnames(training)){
+    if (!col %in% c('TARGET','ID','prob')) {
+      tmp = data.table(cbind(rep(col,length(unique(training[[col]]))),levels(training[[col]])))
+      colnames(tmp) = c('Characteristic','Attribute')
+      card = rbindlist(list(card,tmp),use.names = T)
+    }
+  }
+  
+  card[,`:=`(Score = 0, CA = paste0(Characteristic,Attribute))]
+  
+  setkeyv(card, 'CA')
+  setkeyv(scorecard, 'Attribute')
+  card[scorecard, Score := i.Score]
+  card
+  
+  card[,SumScore := sum(Score),by = 'Characteristic']
+  card = card[SumScore != 0]
+  
+  card[,`:=`(SumScore = NULL, CA = NULL)]
+  card
 }

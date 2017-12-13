@@ -19,7 +19,10 @@ Shiny.addCustomMessageHandler("hud",
   function(message) {
     if (message == "show") {
       showBigImg();
-    } else {
+    } else if (message == "hide"){
+      hideBigImg();
+    }
+    else {
       hideBigImg();
     }
   }

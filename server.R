@@ -25,13 +25,25 @@ shinyServer(function(input, output, clientData, session) {
 	
 		if (is.null(mydata()))	return(selectInput("target_variable", "Target variable:",  c("")), selected = "")
 		# validate(need(!is.null(mydata())&(mydata()$target_variable != '')&levels(as.factor(mydata()[[input$target_variable]])) %in% c('0','1')), "Please select Target variable with '0' and '1' values/levels.")
-		
-		selectInput("target_variable", "Target variable:", c("", colnames(mydata())), selected = "")
+	  tar_list = c()
+	  for (col in colnames(mydata())){
+	    if (length(unique(mydata()[[col]])) == 2){
+	      tar_list = c(tar_list,col)
+	    }
+	  }
+	 
+		selectInput("target_variable", "Target variable:", c("",tar_list), selected = "")
 		})
 	output$ID_column = renderUI({
 		
 		if (is.null(mydata()))	return(selectInput("ID_column", "ID column:",  c("")), selected = "")
-		selectInput("ID_column", "ID column:",  c("", colnames(mydata())), selected = "")
+	  id_list = c()
+	  for (col in colnames(mydata())){
+	    if (length(unique(mydata()[[col]])) == length(mydata()[[col]])){
+	      id_list = c(id_list,col)
+	    }
+	  }
+		selectInput("ID_column", "ID column:",  c("", id_list), selected = "")
 	})
 # 	output$selectUI <- renderUI({ 
 # 		selectInput("target_class", "Target class:", levels(as.factor(data[[input$target_variable]])), selected = "")
@@ -44,7 +56,9 @@ shinyServer(function(input, output, clientData, session) {
 # 		})
 		dataInput <- reactive({
 		 
-			try(robust_scoring(mydata(),target_variable = input$target_variable,ID_column = input$ID_column, training_perc = input$training_perc, good_perc = input$good_perc),silent = T)
+			try(robust_scoring(mydata(),target_variable = input$target_variable,ID_column = input$ID_column, training_perc = input$training_perc, good_perc = input$good_perc),
+			  # , finally = {session$sendCustomMessage(type = 'hud', message = 'hide')})
+			         silent = T)
 		  
 		})
 		inputCutoff =  reactive({
@@ -64,11 +78,14 @@ shinyServer(function(input, output, clientData, session) {
 		mydata()
 
 	}, options = list(pageLength = 20))
-	
-
-	# observeEvent(input$GoButton, {
-	#   session$sendCustomMessage(type = 'hud', message = 'show')
-	# })
+# 	
+#   c = 0
+# 	observeEvent(input$GoButton, {
+# 	  if (c == 0) {
+# 	    session$sendCustomMessage(type = 'hud', message = 'show')
+# 	  }
+# 	  c = 1
+# 	})
 	# 
 	# observeEvent(class(dataInput()),{
 	#   session$sendCustomMessage(type = 'hud', message = 'hide')
@@ -97,7 +114,7 @@ shinyServer(function(input, output, clientData, session) {
 		res = data.table(dataInput()$scorecard)
 		res
 
-	}, options = list(pageLength = 20))
+	}, options = list(pageLength = 40))
 	
 	output$reg_coef <- renderDataTable({
 		if(class(dataInput()) != 'list')	return()
